@@ -1,0 +1,11 @@
+env: "local" #local, dev, prod
+storage_path: "./storage/storage.db"
+http_server: 
+  address: "localhost:2001"
+  timeout: 4s
+  idle_timeout: 60s
+
+mail_server:
+  host: "smtp.yandex.ru"
+  port: 587
+  sender: "blasterjaxxx.33@yandex.ru" 
