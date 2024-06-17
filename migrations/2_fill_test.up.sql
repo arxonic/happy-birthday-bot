@@ -1,6 +1,6 @@
 -- Вставка пользователей
 INSERT INTO users (first_name, last_name, patronymic, birth_date, email)
-VALUES ('Ivan', 'Ivanov', 'Ivanovich', '1985-04-23', 'ivan.ivanov@example.com');
+VALUES ('Ivan', 'Ivanov', 'Ivanovich', '1985-06-26', 'ivan.ivanov@example.com');
 
 INSERT INTO users (first_name, last_name, patronymic, birth_date, email)
 VALUES ('Petr', 'Petrov', 'Petrovich', '1990-06-15', 'petr.petrov@example.com');
@@ -13,14 +13,14 @@ INSERT INTO organizations (name, city, office, department)
 VALUES ('Gazprom Media', 'Moscow', 'Main Office', 'IT Department');
 
 INSERT INTO organizations (name, city, office, department)
-VALUES ('Gazprom Media', 'Saint Petersburg', 'Main Office', 'Marketing Department');
+VALUES ('Gazprom Media', 'Moscow', 'Main Office', 'Marketing Department');
 
 -- Связь пользователей с организациями
 INSERT INTO user_organizations (user_id, organization_id)
 VALUES ((SELECT id FROM users WHERE email='ivan.ivanov@example.com'), (SELECT id FROM organizations WHERE name='Gazprom Media' AND city='Moscow'));
 
 INSERT INTO user_organizations (user_id, organization_id)
-VALUES ((SELECT id FROM users WHERE email='petr.petrov@example.com'), (SELECT id FROM organizations WHERE name='Gazprom Media' AND city='Saint Petersburg'));
+VALUES ((SELECT id FROM users WHERE email='petr.petrov@example.com'), (SELECT id FROM organizations WHERE name='Gazprom Media' AND city='Moscow'));
 
 INSERT INTO user_organizations (user_id, organization_id)
 VALUES ((SELECT id FROM users WHERE email='sidor.sidorov@example.com'), (SELECT id FROM organizations WHERE name='Gazprom Media' AND city='Moscow'));

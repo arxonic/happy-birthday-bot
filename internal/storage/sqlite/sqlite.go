@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/arxonic/gmh/internal/models"
 	repo "github.com/arxonic/gmh/internal/storage"
@@ -30,14 +29,14 @@ func New(storagePath string) (*Storage, error) {
 func (s *Storage) User(uID int64) (models.User, error) {
 	const fn = "storage.sqlite.User"
 
-	stmt, err := s.db.Prepare("SELECT * FROM users WHERE id = ?")
+	stmt, err := s.db.Prepare("SELECT id, first_name, last_name, patronymic, birth_date, email FROM users WHERE id = ?")
 	if err != nil {
 		return models.User{}, err
 	}
 	defer stmt.Close()
 
 	var user models.User
-	err = stmt.QueryRow(uID).Scan(&user)
+	err = stmt.QueryRow(uID).Scan(&user.ID, &user.FirstName, &user.LastName, &user.Patronymic, &user.BirthDate, &user.Email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.User{}, repo.ErrUserNotFound
@@ -128,14 +127,11 @@ func (s *Storage) SaveAllUserInfo(
 
 	var orgID int64
 
+	// TODO FIX THIS (IF OR EXISTS, SEARCH ORG BY FULL NAME)
 	// Save organization if not exist
-	if org, err := s.Organization(userOrganization.ID); err != nil {
-		orgID, err = s.SaveOrganization(userOrganization)
-		if err != nil {
-			return 0, fmt.Errorf("%s:%w", fn, err)
-		}
-	} else {
-		orgID = org.ID
+	orgID, err = s.SaveOrganization(userOrganization)
+	if err != nil {
+		return 0, fmt.Errorf("%s:%w", fn, err)
 	}
 
 	_, err = s.SaveUserOrganization(uID, orgID)
@@ -259,7 +255,24 @@ func (s *Storage) Organization(orgID int64) (models.Organization, error) {
 func (s *Storage) SaveOrganization(org models.Organization) (int64, error) {
 	const fn = "storage.sqlite.SaveOrganization"
 
-	stmt, err := s.db.Prepare("INSERT INTO organizations (name, city, office, department) VALUES (?, ?, ?, ?)")
+	// Check id Exist
+	stmt, err := s.db.Prepare("SELECT id FROM organizations WHERE name = ? AND city = ? AND office = ? AND department = ?")
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	var id int64
+	err = stmt.QueryRow(org.Name, org.City, org.Office, org.Department).Scan(&id)
+	if !errors.Is(err, sql.ErrNoRows) {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return id, nil
+		}
+		return 0, fmt.Errorf("%s:%w", fn, err)
+	}
+
+	// Save
+	stmt, err = s.db.Prepare("INSERT INTO organizations (name, city, office, department) VALUES (?, ?, ?, ?)")
 	if err != nil {
 		return 0, err
 	}
@@ -276,7 +289,7 @@ func (s *Storage) SaveOrganization(org models.Organization) (int64, error) {
 		return 0, fmt.Errorf("%s:%w", fn, err)
 	}
 
-	id, err := res.LastInsertId()
+	id, err = res.LastInsertId()
 	if err != nil {
 		return 0, fmt.Errorf("%s:%w", fn, err)
 	}
@@ -307,23 +320,24 @@ func (s *Storage) SaveUserOrganization(uID, orgID int64) (int64, error) {
 	return id, nil
 }
 
-// FindOrgByFields return Organization model by fields. For example args: Gazprom, Moscow returns all offices and departments of this org.
-func (s *Storage) FindOrgByFields(fields ...string) ([]models.Organization, error) {
+// FindOrgByFields return strings DISTINCT rows by fields. For example args: Gazprom, Moscow returns all DISTINCT offices of this org.
+// !!! IF YOU PASSED ALL FIELDS IN THE FUNC - RETURNS []ID `organization` table
+func (s *Storage) FindOrgByFields(fields ...string) ([]string, error) {
 	const fn = "storage.sqlite.FindOrgByFields"
 
-	q := "SELECT id, name, city, office, department FROM organizations"
+	q := ""
 	switch len(fields) {
+	case 0:
+		q = "SELECT DISTINCT name FROM organizations"
 	case 1:
-		q += " WHERE name = ?"
+		q += "SELECT DISTINCT city FROM organizations WHERE name = ?"
 	case 2:
-		q += " WHERE name = ? AND city = ?"
+		q += "SELECT DISTINCT office FROM organizations WHERE name = ? AND city = ?"
 	case 3:
-		q += " WHERE name = ? AND city = ? AND office = ?"
+		q += "SELECT DISTINCT department FROM organizations WHERE name = ? AND city = ? AND office = ?"
 	case 4:
-		q += " WHERE name = ? AND city = ? AND office = ? AND department = ?"
+		q += "SELECT DISTINCT id FROM organizations WHERE name = ? AND city = ? AND office = ? AND department = ?"
 	}
-
-	fmt.Println(q)
 
 	stmt, err := s.db.Prepare(q)
 	if err != nil {
@@ -348,15 +362,11 @@ func (s *Storage) FindOrgByFields(fields ...string) ([]models.Organization, erro
 		return nil, fmt.Errorf("%s:%w", fn, err)
 	}
 
-	orgs := make([]models.Organization, 0)
+	orgs := make([]string, 0)
 	for rows.Next() {
-		var org models.Organization
-		if err := rows.Scan(&org.ID, &org.Name, &org.City, &org.Office, &org.Department); err != nil {
+		var org string
+		if err := rows.Scan(&org); err != nil {
 			return nil, fmt.Errorf("%s:%w", fn, err)
-		}
-
-		if ok := slices.Contains[[]models.Organization, models.Organization](orgs, org); ok {
-			continue
 		}
 
 		orgs = append(orgs, org)
@@ -365,14 +375,72 @@ func (s *Storage) FindOrgByFields(fields ...string) ([]models.Organization, erro
 	return orgs, nil
 }
 
-func (s *Storage) UsersByOrgID(id int64) ([]models.User, error) {
-	return nil, nil
+func (s *Storage) UserIDsByOrgID(id int64) ([]int64, error) {
+	const fn = "storage.sqlite.UserIDsByOrgID"
+
+	stmt, err := s.db.Prepare("SELECT user_id FROM user_organizations WHERE organization_id = ?")
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(id)
+	if err != nil {
+		return nil, fmt.Errorf("%s:%w", fn, err)
+	}
+
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("%s:%w", fn, err)
+		}
+
+		ids = append(ids, id)
+	}
+
+	return ids, nil
 }
 
 func (s *Storage) UserIDByMessengerID(id int64) (int64, error) {
-	return 0, nil
+	const fn = "storage.sqlite.UserIDByMessengerID"
+
+	stmt, err := s.db.Prepare("SELECT user_id FROM user_messengers WHERE messenger_id = ?")
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	var uID int64
+	err = stmt.QueryRow(id).Scan(&uID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, repo.ErrOrganizationNotFound
+		}
+		return 0, fmt.Errorf("%s:%w", fn, err)
+	}
+
+	return uID, nil
 }
 
 func (s *Storage) Subscribe(subID, uID int64) (int64, error) {
-	return 0, nil
+	const fn = "storage.sqlite.Subscribe"
+
+	stmt, err := s.db.Prepare("INSERT INTO subscribes (user_id, sub_id) VALUES (?, ?)")
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	res, err := stmt.Exec(uID, subID)
+	if err != nil {
+		return 0, fmt.Errorf("%s:%w", fn, err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("%s:%w", fn, err)
+	}
+
+	return id, nil
 }

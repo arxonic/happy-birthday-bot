@@ -43,7 +43,7 @@ func Run(cfg *config.Config, log *slog.Logger) {
 	// -- init auth service
 	authService := auth.New(log, storage, storage, storage, notifyService)
 	// -- init subscribe service
-	subService := subscribe.New(log, storage)
+	subService := subscribe.New(log, storage, storage)
 
 	// transport
 	httpRouter := chi.NewRouter()

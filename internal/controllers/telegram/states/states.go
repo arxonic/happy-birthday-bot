@@ -8,11 +8,7 @@ const (
 
 	StateMenu
 
-	StateOrgName
-	StateOrgCity
-	StateOrgOffice
-	StateOrgDepart
-
+	StateFind
 	StateSubscribe
 )
 
@@ -30,7 +26,7 @@ type FindState struct {
 	City         string
 	Office       string
 	Department   string
-	User         string
+	UserID       int64
 }
 
 func NewStates() *States {

@@ -17,9 +17,7 @@ var (
 	city        = "Moscow"
 	orgName     = "Gazprom Media"
 	departments = [...]string{
-		"GoDev",
-		"Java",
-		"Test",
+		"Go Dev",
 	}
 )
 

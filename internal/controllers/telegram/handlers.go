@@ -1,16 +1,15 @@
 package telegram
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/arxonic/gmh/internal/controllers/telegram/states"
 	"github.com/arxonic/gmh/internal/lib/email"
 	"github.com/arxonic/gmh/internal/models"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
-
-type UserProvider interface {
-}
 
 type UserAuther interface {
 	RegisterNewUser(models.User, models.UserMessenger, models.Organization) (int64, error)
@@ -77,21 +76,27 @@ func (b *Bot) EmailWait(m *tgbotapi.Message, emp Employer, ua UserAuther) (int, 
 func (b *Bot) MenuHandler(m *tgbotapi.Message, uf UserFinder) (int, error) {
 	switch m.Text {
 	case "1":
-		b.SendMessage(m, "Давайте поищем Ваших коллег, на чьи дни рожения Вы хотите подписаться. Выберите оргагизацию из списка (введите её название):")
+		b.SendMessage(m, "Давайте поищем Ваших коллег, на чьи дни рожения Вы хотите подписаться")
+
 		orgs, err := uf.FindUser()
 		if err != nil {
 			b.SendMessage(m, "Такого варианта нет")
 			return states.StateMenu, nil
 		}
 
-		// TODO change string concatinate
-		resp := ""
-		for i, org := range orgs {
-			resp += strconv.Itoa(i) + " - " + org.Name + "\n"
+		tgbotapi.NewReplyKeyboard()
+		rows := make([]tgbotapi.KeyboardButton, 0)
+		for _, org := range orgs {
+			r := tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton(org))
+			rows = append(rows, r...)
 		}
 
-		b.SendMessage(m, resp)
-		return states.StateOrgName, nil
+		markup := tgbotapi.NewReplyKeyboard(rows)
+
+		b.SendKeyboardMessage(m, "Выберите оргагизацию из списка (введите её название):", markup)
+
+		return states.StateFind, nil
+
 	case "2":
 		b.SendMessage(m, "Раздел в разработке...")
 		return states.StateMenu, nil
@@ -102,68 +107,143 @@ func (b *Bot) MenuHandler(m *tgbotapi.Message, uf UserFinder) (int, error) {
 }
 
 type UserFinder interface {
-	FindUser(...string) ([]models.Organization, error)
+	User(id int64) (models.User, error)
+	UsersByOrgID(id int64) ([]models.User, error)
+	FindUser(...string) ([]string, error)
+	Subscribe(messengerID, uID int64) error
 }
 
 func (b *Bot) FinderHandler(m *tgbotapi.Message, uf UserFinder, state *states.UserState) (int, error) {
-	switch state.State {
-	case states.StateOrgName:
+	response := ""
+
+	orgs := make([]string, 0)
+
+	var err error
+
+	if state.Finder.Organization == "" {
 		orgName := m.Text
 
-		orgs, err := uf.FindUser(orgName)
+		orgs, err = uf.FindUser(orgName)
 		if err != nil {
-			return state.State, nil
+			b.SendMessage(m, "Такого варианта нет")
+			return states.StateMenu, nil
 		}
 
 		state.Finder.Organization = orgName
 
-		// TODO change string concatinate
-		resp := ""
-		for i, org := range orgs {
-			resp += strconv.Itoa(i) + org.City + "\n"
+		response = "Выберите город этой организации из списка:"
+
+	} else if state.Finder.City == "" {
+		orgCity := m.Text
+
+		orgs, err = uf.FindUser(state.Finder.Organization, orgCity)
+		if err != nil {
+			b.SendMessage(m, "Такого варианта нет")
+			return states.StateMenu, nil
 		}
 
-		b.SendMessage(m, resp)
+		state.Finder.City = orgCity
 
-		return states.StateOrgCity, nil
+		response = "Выберите офис этой организации из списка:"
 
-	case states.StateOrgCity:
-		// orgCity := m.Text
+	} else if state.Finder.Office == "" {
+		orgOffice := m.Text
 
-		// orgs, err := uf.FindOrgByFields(orgName, orgCity)
-		// if err != nil {
-		// 	return state.State, nil
-		// }
+		orgs, err = uf.FindUser(state.Finder.Organization, state.Finder.City, orgOffice)
+		if err != nil {
+			b.SendMessage(m, "Такого варианта нет")
+			return states.StateMenu, nil
+		}
 
-		return states.StateOrgCity, nil
+		state.Finder.Office = orgOffice
 
-	case states.StateOrgOffice:
-		// orgName := m.Text
+		response = "Выберите отдел этой организации из списка:"
 
-		// orgs, err := uf.FindOrgByFields(orgName)
-		// if err != nil {
-		// 	return state.State, nil
-		// }
+	} else if state.Finder.Department == "" {
+		orgDepart := m.Text
 
-		return states.StateOrgCity, nil
+		ids, err := uf.FindUser(state.Finder.Organization, state.Finder.City, state.Finder.Office, orgDepart)
+		if err != nil {
+			b.SendMessage(m, "Такого варианта нет")
+			return states.StateMenu, nil
+		}
 
-	case states.StateOrgDepart:
-		// orgName := m.Text
+		id, err := strconv.Atoi(ids[0])
+		if err != nil {
+			b.SendMessage(m, "Ошибка сервера, повторите попытку позже")
+			return states.StateMenu, nil
+		}
 
-		// orgs, err := uf.FindOrgByFields(orgName)
-		// if err != nil {
-		// 	return state.State, nil
-		// }
+		users, err := uf.UsersByOrgID(int64(id))
+		if err != nil {
+			b.SendMessage(m, "Ошибка сервера, повторите попытку позже")
+			return states.StateMenu, nil
+		}
 
-		return states.StateSubscribe, nil
+		state.Finder.Department = orgDepart
 
-	default:
-		return state.State, nil
+		for _, u := range users {
+			r := fmt.Sprintf("%d %s %s %s", u.ID, u.LastName, u.FirstName, u.LastName)
+			orgs = append(orgs, r)
+		}
 
+		response = "Выберите человека из списка или введите его id:"
+	} else if state.Finder.Office == "" {
+		orgOffice := m.Text
+
+		orgs, err = uf.FindUser(state.Finder.Organization, state.Finder.City, orgOffice)
+		if err != nil {
+			b.SendMessage(m, "Такого варианта нет")
+			return states.StateMenu, nil
+		}
+
+		state.Finder.Office = orgOffice
+
+		response = "Выберите отдел этой организации из списка:"
+
+	} else if state.Finder.UserID == 0 {
+		usr := strings.Split(m.Text, " ")
+
+		usrID, err := strconv.Atoi(usr[0])
+		if err != nil {
+			b.SendMessage(m, "Ошибка ввода")
+			return states.StateMenu, nil
+		}
+
+		err = uf.Subscribe(m.From.ID, int64(usrID))
+		if err != nil {
+			b.SendMessage(m, "Ошибка сервера, повторите попытку позже")
+			return states.StateMenu, nil
+		}
+
+		// null state
+		state.Finder = states.FindState{}
+
+		b.SendMessage(m, "Вы успешно подписались на польщователя! Я отправлю вам ссылку на чат за неделю до дня рождения вашего коллеги <3")
+
+		return states.StateMenu, nil
 	}
+
+	// Draw buttons
+	markup := createReplyKeyboardMarkup(orgs)
+
+	b.SendKeyboardMessage(m, response, markup)
+
+	return state.State, nil
 }
 
 func (b *Bot) handleUnknownCommand(m *tgbotapi.Message) error {
 	text := "Эта команда мне незнакома 0_o"
 	return b.SendMessage(m, text)
+}
+
+// createReplyKeyboardMarkup create buttons from []string
+func createReplyKeyboardMarkup(btns []string) tgbotapi.ReplyKeyboardMarkup {
+	rows := make([]tgbotapi.KeyboardButton, 0)
+	for _, b := range btns {
+		r := tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton(b))
+		rows = append(rows, r...)
+	}
+
+	return tgbotapi.NewReplyKeyboard(rows)
 }

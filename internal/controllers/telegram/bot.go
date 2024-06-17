@@ -75,7 +75,7 @@ func (b *Bot) handleState(m *tgbotapi.Message, s *states.States, uf UserFinder, 
 		}
 		s.UserStates[userID].State = newState
 
-	case states.StateOrgName:
+	case states.StateFind:
 		newState, err := b.FinderHandler(m, uf, state)
 		if err != nil {
 			return
@@ -88,6 +88,16 @@ func (b *Bot) handleState(m *tgbotapi.Message, s *states.States, uf UserFinder, 
 func (b *Bot) SendMessage(m *tgbotapi.Message, text string) error {
 	msg := tgbotapi.NewMessage(m.Chat.ID, text)
 	msg.ReplyToMessageID = m.MessageID
+
+	_, err := b.bot.Send(msg)
+
+	return err
+}
+
+func (b *Bot) SendKeyboardMessage(m *tgbotapi.Message, text string, markup interface{}) error {
+	msg := tgbotapi.NewMessage(m.Chat.ID, text)
+
+	msg.ReplyMarkup = markup
 
 	_, err := b.bot.Send(msg)
 
