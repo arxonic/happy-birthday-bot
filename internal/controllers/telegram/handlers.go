@@ -232,11 +232,11 @@ func (b *Bot) handleUnknownCommand(m *tgbotapi.Message) error {
 
 // createReplyKeyboardMarkup create buttons from []string
 func createReplyKeyboardMarkup(btns []string) tgbotapi.ReplyKeyboardMarkup {
-	rows := make([]tgbotapi.KeyboardButton, 0)
+	rows := make([][]tgbotapi.KeyboardButton, 0)
 	for _, b := range btns {
 		r := tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton(b))
-		rows = append(rows, r...)
+		rows = append(rows, r)
 	}
 
-	return tgbotapi.NewReplyKeyboard(rows)
+	return tgbotapi.NewReplyKeyboard(rows...)
 }
