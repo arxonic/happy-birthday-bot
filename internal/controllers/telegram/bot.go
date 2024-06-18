@@ -47,42 +47,45 @@ func (b *Bot) handleState(m *tgbotapi.Message, s *states.States, uf UserFinder, 
 	userID := m.From.ID
 
 	// Инициализация состояния пользователя, если его еще нет
-	if _, ok := s.UserStates[userID]; !ok {
-		s.UserStates[userID] = &states.UserState{State: states.StateAuthMiddleware}
+	if _, ok := s.Load(userID); !ok {
+		s.Store(userID, &states.UserState{State: states.StateAuthMiddleware})
 	}
 
-	state := s.UserStates[userID]
+	state, _ := s.Load(userID)
+
+	newState := state.State
+	var err error
 
 	switch state.State {
 	case states.StateAuthMiddleware:
-		newState, err := b.Auth(m, ua)
+		newState, err = b.Auth(m, ua)
 		if err != nil {
 			return
 		}
-		s.UserStates[userID].State = newState
 
 	case states.StateEmailWait:
-		newState, err := b.EmailWait(m, emp, ua)
+		newState, err = b.EmailWait(m, emp, ua)
 		if err != nil {
 			return
 		}
-		s.UserStates[userID].State = newState
 
 	case states.StateMenu:
-		newState, err := b.MenuHandler(m, uf)
+		newState, err = b.MenuHandler(m, uf)
 		if err != nil {
 			return
 		}
-		s.UserStates[userID].State = newState
 
 	case states.StateFind:
-		newState, err := b.FinderHandler(m, uf, state)
+		newState, err = b.FinderHandler(m, uf, state)
 		if err != nil {
 			return
 		}
-		s.UserStates[userID].State = newState
+
 	}
 
+	state.State = newState
+	s.Store(userID, state)
+	// s.UserStates[userID].State = newState
 }
 
 func (b *Bot) SendMessage(m *tgbotapi.Message, text string) error {

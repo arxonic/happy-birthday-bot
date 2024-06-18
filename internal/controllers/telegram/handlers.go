@@ -124,9 +124,9 @@ func (b *Bot) FinderHandler(m *tgbotapi.Message, uf UserFinder, state *states.Us
 		orgName := m.Text
 
 		orgs, err = uf.FindUser(orgName)
-		if err != nil {
+		if err != nil || len(orgs) < 1 {
 			b.SendMessage(m, "Такого варианта нет")
-			return states.StateMenu, nil
+			return states.StateFind, nil
 		}
 
 		state.Finder.Organization = orgName
@@ -137,9 +137,9 @@ func (b *Bot) FinderHandler(m *tgbotapi.Message, uf UserFinder, state *states.Us
 		orgCity := m.Text
 
 		orgs, err = uf.FindUser(state.Finder.Organization, orgCity)
-		if err != nil {
+		if err != nil || len(orgs) < 1 {
 			b.SendMessage(m, "Такого варианта нет")
-			return states.StateMenu, nil
+			return states.StateFind, nil
 		}
 
 		state.Finder.City = orgCity
@@ -150,9 +150,9 @@ func (b *Bot) FinderHandler(m *tgbotapi.Message, uf UserFinder, state *states.Us
 		orgOffice := m.Text
 
 		orgs, err = uf.FindUser(state.Finder.Organization, state.Finder.City, orgOffice)
-		if err != nil {
+		if err != nil || len(orgs) < 1 {
 			b.SendMessage(m, "Такого варианта нет")
-			return states.StateMenu, nil
+			return states.StateFind, nil
 		}
 
 		state.Finder.Office = orgOffice
@@ -163,21 +163,21 @@ func (b *Bot) FinderHandler(m *tgbotapi.Message, uf UserFinder, state *states.Us
 		orgDepart := m.Text
 
 		ids, err := uf.FindUser(state.Finder.Organization, state.Finder.City, state.Finder.Office, orgDepart)
-		if err != nil {
+		if err != nil || len(ids) < 1 {
 			b.SendMessage(m, "Такого варианта нет")
-			return states.StateMenu, nil
+			return states.StateFind, nil
 		}
 
 		id, err := strconv.Atoi(ids[0])
 		if err != nil {
 			b.SendMessage(m, "Ошибка сервера, повторите попытку позже")
-			return states.StateMenu, nil
+			return states.StateFind, nil
 		}
 
 		users, err := uf.UsersByOrgID(int64(id))
-		if err != nil {
+		if err != nil || len(users) < 1 {
 			b.SendMessage(m, "Ошибка сервера, повторите попытку позже")
-			return states.StateMenu, nil
+			return states.StateFind, nil
 		}
 
 		state.Finder.Department = orgDepart
@@ -188,32 +188,25 @@ func (b *Bot) FinderHandler(m *tgbotapi.Message, uf UserFinder, state *states.Us
 		}
 
 		response = "Выберите человека из списка или введите его id:"
-	} else if state.Finder.Office == "" {
-		orgOffice := m.Text
-
-		orgs, err = uf.FindUser(state.Finder.Organization, state.Finder.City, orgOffice)
-		if err != nil {
-			b.SendMessage(m, "Такого варианта нет")
-			return states.StateMenu, nil
-		}
-
-		state.Finder.Office = orgOffice
-
-		response = "Выберите отдел этой организации из списка:"
 
 	} else if state.Finder.UserID == 0 {
 		usr := strings.Split(m.Text, " ")
 
+		if len(usr) < 1 {
+			b.SendMessage(m, "Ошибка ввода")
+			return states.StateFind, nil
+		}
+
 		usrID, err := strconv.Atoi(usr[0])
 		if err != nil {
 			b.SendMessage(m, "Ошибка ввода")
-			return states.StateMenu, nil
+			return states.StateFind, nil
 		}
 
 		err = uf.Subscribe(m.From.ID, int64(usrID))
 		if err != nil {
-			b.SendMessage(m, "Ошибка сервера, повторите попытку позже")
-			return states.StateMenu, nil
+			b.SendMessage(m, "Вы уже подписаны на ДР этого человека")
+			return states.StateFind, nil
 		}
 
 		// null state
